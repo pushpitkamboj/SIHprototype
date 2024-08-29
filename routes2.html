@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTN Truck Simulation - Enhanced</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <header class="bg-blue-600 text-white p-4 rounded-t-lg">
+            <h1 class="text-2xl font-bold">RTN Truck Telematics Solution</h1>
+        </header>
+
+        <main class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- Live Truck Tracking Section -->
+            <section class="md:col-span-2 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-2">Live Truck Tracking</h2>
+                <div id="map" class="h-[600px] rounded"></div>
+                <div id="alerts" class="mt-2 text-red-600 font-semibold"></div>
+            </section>
+
+            <!-- Simulation Statistics Section -->
+            <section class="bg-white p-4 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-2">Simulation Statistics</h2>
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="text-lg font-semibold">Trucks per City</h3>
+                        <canvas id="trucksPerCityChart"></canvas>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold">Overall Capacity Utilization</h3>
+                        <canvas id="capacityUtilizationChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Truck Details Section -->
+            <section class="md:col-span-3 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-2">Truck Details</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full" id="truckTable">
+                        <thead>
+                            <tr class="bg-gray-100">
+                                <th class="p-2 text-left">Truck ID</th>
+                                <th class="p-2 text-left">Current City</th>
+                                <th class="p-2 text-left">Destination</th>
+                                <th class="p-2 text-left">Capacity</th>
+                                <th class="p-2 text-left">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="truckTableBody">
+                            <!-- Truck rows will be dynamically inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Route Optimization Section -->
+            <section class="md:col-span-3 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-2">Route Optimization</h2>
+                <div class="space-y-4">
+                    <h3 class="text-lg font-semibold">Optimized Routes</h3>
+                    <div id="routeOptimizationDetails"></div>
+                </div>
+            </section>
+
+            
+        <!-- Additional Section for 3PL Integration -->
+<section class="md:col-span-3 bg-white p-4 rounded-lg shadow mt-4">
+    <h2 class="text-xl font-semibold mb-2">Third-Party Logistics (3PL) Integration</h2>
+    <div class="overflow-x-auto">
+        <table class="w-full" id="3plTable">
+            <thead>
+                <tr class="bg-gray-100">
+                    <th class="p-2 text-left">Partner</th>
+                    <th class="p-2 text-left">Available Trucks</th>
+                    <th class="p-2 text-left">Current Location</th>
+                    <th class="p-2 text-left">Destination</th>
+                </tr>
+            </thead>
+            <tbody id="3plTableBody">
+                <!-- 3PL trucks rows will be dynamically inserted here -->
+            </tbody>
+        </table>
+    </div>
+</section>
+        </main>
+    </div>
+
+    <script>
+        // Define cities with their coordinates
+        const cities = [
+            { name: 'Mumbai', lat: 19.0760, lon: 72.8777 },
+            { name: 'Delhi', lat: 28.6139, lon: 77.2090 },
+            { name: 'Bangalore', lat: 12.9716, lon: 77.5946 },
+            { name: 'Hyderabad', lat: 17.3850, lon: 78.4867 },
+            { name: 'Chennai', lat: 13.0827, lon: 80.2707 },
+            { name: 'Kolkata', lat: 22.5726, lon: 88.3639 },
+            { name: 'Ahmedabad', lat: 23.0225, lon: 72.5714 },
+            { name: 'Pune', lat: 18.5204, lon: 73.8567 },
+            { name: 'Jaipur', lat: 26.9124, lon: 75.7873 },
+            { name: 'Lucknow', lat: 26.8467, lon: 80.9462 }
+        ];
+
+        // Initialize map
+        const map = L.map('map').setView([22.5726, 78.3639], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // Create truck markers and routes
+        const trucks = [];
+        const truckMarkers = {};
+        const routeLines = {};
+        const geofence = {}; // Geofencing for detours and delays
+
+        // Create trucks with routes and markers
+        for (let i = 1; i <= 50; i++) {
+            const startCity = cities[Math.floor(Math.random() * cities.length)];
+            const endCity = cities[Math.floor(Math.random() * cities.length)];
+            const truckID = `RTN-${i.toString().padStart(3, '0')}`;
+
+            trucks.push({
+                id: truckID,
+                currentCity: startCity,
+                destination: endCity,
+                capacity: Math.floor(Math.random() * 41) + 60, // 60% to 100%
+                status: ['On Time', 'Delayed', 'Loading', 'Unloading'][Math.floor(Math.random() * 4)],
+                route: [startCity, endCity]
+            });
+
+            // Create marker for the truck
+            const marker = L.marker([startCity.lat, startCity.lon]).addTo(map)
+                .bindPopup(`<b>${truckID}</b><br>Current City: ${startCity.name}<br>Destination: ${endCity.name}`);
+            truckMarkers[truckID] = marker;
+
+            // Draw initial route line
+            const route = L.polyline([[startCity.lat, startCity.lon], [endCity.lat, endCity.lon]], { color: 'blue' }).addTo(map);
+            routeLines[truckID] = route;
+
+            // Set up geofence for alerts
+            geofence[truckID] = L.circle([startCity.lat, startCity.lon], {
+                color: 'red',
+                fillColor: '#f03',
+                fillOpacity: 0.5,
+                radius: 50000 // Example radius
+            }).addTo(map);
+        }
+
+        // Update truck table
+        function updateTruckTable() {
+            const tableBody = document.getElementById('truckTableBody');
+            tableBody.innerHTML = '';
+            trucks.forEach(truck => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-2">${truck.id}</td>
+                    <td class="p-2">${truck.currentCity.name}</td>
+                    <td class="p-2">${truck.destination.name}</td>
+                    <td class="p-2">${truck.capacity}%</td>
+                    <td class="p-2"><span class="px-2 py-1 rounded ${truck.status === 'On Time' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'}">${truck.status}</span></td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Update charts
+        function updateCharts() {
+            const cityCount = cities.reduce((acc, city) => {
+                acc[city.name] = 0;
+                return acc;
+            }, {});
+            
+            trucks.forEach(truck => {
+                cityCount[truck.currentCity.name]++;
+            });
+
+            new Chart(document.getElementById('trucksPerCityChart'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(cityCount),
+                    datasets: [{
+                        label: 'Number of Trucks',
+                        data: Object.values(cityCount),
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            const capacityData = trucks.map(truck => truck.capacity);
+            new Chart(document.getElementById('capacityUtilizationChart'), {
+                type: 'pie',
+                data: {
+                    labels: trucks.map(truck => truck.id),
+                    datasets: [{
+                        label: 'Capacity Utilization',
+                        data: capacityData,
+                        backgroundColor: capacityData.map(capacity => `rgba(${255 - (capacity - 60) * 4}, ${capacity * 2}, 54, 0.6)`),
+                        borderColor: 'rgba(255, 255, 255, 1)',
+                        borderWidth: 1
+                    }]
+                }
+            });
+        }
+
+        // Function to move trucks and update route lines
+        function moveTrucks() {
+            trucks.forEach(truck => {
+                if (Math.random() < 0.1) { // 10% chance to move
+                    const newCity = cities[Math.floor(Math.random() * cities.length)];
+                    truck.currentCity = newCity;
+
+                    // Update marker position
+                    truckMarkers[truck.id].setLatLng([newCity.lat, newCity.lon])
+                        .setPopupContent(`<b>${truck.id}</b><br>Current City: ${newCity.name}<br>Destination: ${truck.destination.name}`)
+                        .openPopup();
+
+                    // Update status randomly
+                    truck.status = ['On Time', 'Delayed', 'Loading', 'Unloading'][Math.floor(Math.random() * 4)];
+
+                    // Update route line
+                    const newRoute = L.polyline([[newCity.lat, newCity.lon], [truck.destination.lat, truck.destination.lon]], { color: 'blue' });
+                    map.removeLayer(routeLines[truck.id]);
+                    routeLines[truck.id] = newRoute.addTo(map);
+
+                    // Check for detours and trigger alerts
+                    if (Math.random() < 0.2) { // 20% chance for detour
+                        const alertMessage = `Truck ${truck.id} has taken an unauthorized detour near ${newCity.name}!`;
+                        document.getElementById('alerts').innerHTML += `<p>${alertMessage}</p>`;
+                    }
+                }
+            });
+
+            updateTruckTable();
+            updateCharts();
+        }
+
+        // Initial setup
+        updateTruckTable();
+        updateCharts();
+
+        // Move trucks every 5 seconds
+        setInterval(moveTrucks, 5000);
+
+
+        //
+        const partners = [
+        { name: 'LogiX', trucks: [
+            { id: 'LX-001', location: 'Ahmedabad', destination: 'Mumbai' },
+            { id: 'LX-002', location: 'Pune', destination: 'Delhi' }
+        ]},
+        { name: 'TransIt', trucks: [
+            { id: 'TI-101', location: 'Jaipur', destination: 'Chennai' },
+            { id: 'TI-102', location: 'Lucknow', destination: 'Kolkata' }
+        ]}
+    ];
+
+    // Function to populate 3PL table
+    function update3PLTable() {
+        const tableBody = document.getElementById('3plTableBody');
+        tableBody.innerHTML = '';
+        partners.forEach(partner => {
+            partner.trucks.forEach(truck => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-2">${partner.name}</td>
+                    <td class="p-2">${truck.id}</td>
+                    <td class="p-2">${truck.location}</td>
+                    <td class="p-2">${truck.destination}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        });
+    }
+
+    // Function to trigger predictive alerts based on random data simulation
+    function triggerPredictiveAlerts() {
+        trucks.forEach(truck => {
+            if (Math.random() < 0.1) { // 10% chance for predictive alert
+                const alertMessage = `Predictive Alert: Truck ${truck.id} is likely to be delayed on its way to ${truck.destination.name}!`;
+                document.getElementById('alerts').innerHTML += `<p class="text-yellow-600">${alertMessage}</p>`;
+            }
+        });
+    }
+
+    // Function to update UI dynamically
+    function updateUI() {
+        updateTruckTable();
+        updateCharts();
+        update3PLTable();
+    }
+
+    // Initial setup
+    updateUI();
+
+    // Move trucks and update UI every 5 seconds
+    setInterval(() => {
+        moveTrucks();
+        triggerPredictiveAlerts();
+        updateUI();
+    }, 5000);
+    
+    </script>
+</body>
+</html>
